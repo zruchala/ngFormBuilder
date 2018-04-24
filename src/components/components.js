@@ -4,7 +4,7 @@ module.exports = function(app) {
     function($templateCache) {
       // Create the component markup.
       $templateCache.put('formio/components/settings.html',
-        '<form id="component-settings" novalidate>' +
+        '<form id="component-settings" class="formpart" novalidate>' +
           '<div class="row">' +
             '<div class="col-md-6">' +
               '<p class="lead" ng-if="::formComponent.title" style="margin-top:10px;">{{::formComponent.title | formioTranslate}} {{\'Component\' | formioTranslate}}</p>' +
