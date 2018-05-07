@@ -2,17 +2,9 @@
 (function (global){
 'use strict';
 
-var _typeof2 = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; };
-
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-
-var _typeof = typeof Symbol === "function" && _typeof2(Symbol.iterator) === "symbol" ? function (obj) {
-  return typeof obj === "undefined" ? "undefined" : _typeof2(obj);
-} : function (obj) {
-  return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj === "undefined" ? "undefined" : _typeof2(obj);
-};
 
 var _lodash = _dereq_('lodash');
 
@@ -30,16 +22,6 @@ var _operators = _dereq_('./jsonlogic/operators');
 
 function _interopRequireDefault(obj) {
   return obj && obj.__esModule ? obj : { default: obj };
-}
-
-function _toConsumableArray(arr) {
-  if (Array.isArray(arr)) {
-    for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) {
-      arr2[i] = arr[i];
-    }return arr2;
-  } else {
-    return Array.from(arr);
-  }
 }
 
 // Configure JsonLogic
@@ -64,94 +46,6 @@ _jsonLogicJs2.default.add_operation('relativeMaxDate', function (relativeMaxDate
 
 var FormioUtils = {
   jsonLogic: _jsonLogicJs2.default, // Share
-
-  /**
-   * Evaluate a method.
-   *
-   * @param func
-   * @param args
-   * @return {*}
-   */
-  evaluate: function evaluate(func, args, ret, tokenize) {
-    var returnVal = null;
-    var component = args.component && args.component.component ? args.component.component : { key: 'unknown' };
-    if (!args.form && args.instance) {
-      args.form = _lodash2.default.get(args.instance, 'root._form', {});
-    }
-    if (typeof func === 'string') {
-      if (ret) {
-        func += ';return ' + ret;
-      }
-      var params = _lodash2.default.keys(args);
-
-      if (tokenize) {
-        // Replace all {{ }} references with actual data.
-        func = func.replace(/({{\s+(.*)\s+}})/, function (match, $1, $2) {
-          if ($2.indexOf('data.') === 0) {
-            return _lodash2.default.get(args.data, $2.replace('data.', ''));
-          } else if ($2.indexOf('row.') === 0) {
-            return _lodash2.default.get(args.row, $2.replace('row.', ''));
-          }
-
-          // Support legacy...
-          return _lodash2.default.get(args.data, $2);
-        });
-      }
-
-      func = new (Function.prototype.bind.apply(Function, [null].concat(_toConsumableArray(params), [func])))();
-    }
-    if (typeof func === 'function') {
-      var values = _lodash2.default.values(args);
-      try {
-        returnVal = func.apply(undefined, _toConsumableArray(values));
-      } catch (err) {
-        returnVal = null;
-        console.warn('An error occured within custom function for ' + component.key, err);
-      }
-    } else if ((typeof func === 'undefined' ? 'undefined' : _typeof(func)) === 'object') {
-      try {
-        returnVal = _jsonLogicJs2.default.apply(func, args);
-      } catch (err) {
-        returnVal = null;
-        console.warn('An error occured within custom function for ' + component.key, err);
-      }
-    } else {
-      console.warn('Unknown function type for ' + component.key);
-    }
-    return returnVal;
-  },
-  getRandomComponentId: function getRandomComponentId() {
-    return 'e' + Math.random().toString(36).substring(7);
-  },
-
-  /**
-   * Get a property value of an element.
-   *
-   * @param style
-   * @param prop
-   * @return {number}
-   */
-  getPropertyValue: function getPropertyValue(style, prop) {
-    var value = style.getPropertyValue(prop);
-    value = value ? value.replace(/[^0-9.]/g, '') : '0';
-    return parseFloat(value);
-  },
-
-  /**
-   * Get an elements bounding rectagle.
-   *
-   * @param element
-   * @return {{x: string, y: string, width: string, height: string}}
-   */
-  getElementRect: function getElementRect(element) {
-    var style = window.getComputedStyle(element, null);
-    return {
-      x: FormioUtils.getPropertyValue(style, 'left'),
-      y: FormioUtils.getPropertyValue(style, 'top'),
-      width: FormioUtils.getPropertyValue(style, 'width'),
-      height: FormioUtils.getPropertyValue(style, 'height')
-    };
-  },
 
   /**
    * Determines the boolean value of a setting.
@@ -421,13 +315,25 @@ var FormioUtils = {
   checkCalculated: function checkCalculated(component, submission, rowData) {
     // Process calculated value stuff if present.
     if (component.calculateValue) {
-      _lodash2.default.set(rowData, component.key, FormioUtils.evaluate(component.calculateValue, {
-        value: [],
-        data: submission ? submission.data : rowData,
-        row: rowData,
-        util: this,
-        component: component
-      }, 'value'));
+      var row = rowData;
+      var data = submission ? submission.data : rowData;
+      if (_lodash2.default.isString(component.calculateValue)) {
+        try {
+          _lodash2.default.set(rowData, component.key, new Function('component', 'data', 'row', 'util', 'moment', 'var value = [];' + component.calculateValue.toString() + '; return value;')(component, data, row, this, _moment2.default));
+        } catch (e) {
+          console.warn('An error occurred calculating a value for ' + component.key, e);
+        }
+      } else {
+        try {
+          _lodash2.default.set(rowData, component.key, this.jsonLogic.apply(component.calculateValue, {
+            data: data,
+            row: row,
+            _: _lodash2.default
+          }));
+        } catch (e) {
+          console.warn('An error occurred calculating a value for ' + component.key, e);
+        }
+      }
     }
   },
 
@@ -473,22 +379,19 @@ var FormioUtils = {
    * @param data
    * @returns {*}
    */
-  checkCustomConditional: function checkCustomConditional(component, custom, row, data, form, variable, onError, instance) {
-    if (typeof custom === 'string') {
-      custom = 'var ' + variable + ' = true; ' + custom + '; return ' + variable + ';';
-    }
-    var value = FormioUtils.evaluate(custom, { component: component, row: row, data: data, form: form, instance: instance });
-    if (value === null) {
+  checkCustomConditional: function checkCustomConditional(component, custom, row, data, variable, onError) {
+    try {
+      return new Function('component', 'data', 'row', 'util', 'moment', 'var ' + variable + ' = true; ' + custom.toString() + '; return ' + variable + ';')(component, data, row, this, _moment2.default);
+    } catch (e) {
+      console.warn('An error occurred in a condition statement for component ' + component.key, e);
       return onError;
     }
-    return value;
   },
-  checkJsonConditional: function checkJsonConditional(component, json, row, data, form, onError) {
+  checkJsonConditional: function checkJsonConditional(component, json, row, data, onError) {
     try {
       return _jsonLogicJs2.default.apply(json, {
         data: data,
         row: row,
-        form: form,
         _: _lodash2.default
       });
     } catch (err) {
@@ -509,13 +412,13 @@ var FormioUtils = {
    *
    * @returns {boolean}
    */
-  checkCondition: function checkCondition(component, row, data, form, instance) {
+  checkCondition: function checkCondition(component, row, data) {
     if (component.customConditional) {
-      return this.checkCustomConditional(component, component.customConditional, row, data, form, 'show', true, instance);
+      return this.checkCustomConditional(component, component.customConditional, row, data, 'show', true);
     } else if (component.conditional && component.conditional.when) {
       return this.checkSimpleConditional(component, component.conditional, row, data, true);
     } else if (component.conditional && component.conditional.json) {
-      return this.checkJsonConditional(component, component.conditional.json, row, data, form);
+      return this.checkJsonConditional(component, component.conditional.json, row, data);
     }
 
     // Default to show.
@@ -531,14 +434,14 @@ var FormioUtils = {
    * @param row
    * @returns {mixed}
    */
-  checkTrigger: function checkTrigger(component, trigger, row, data, form, instance) {
+  checkTrigger: function checkTrigger(component, trigger, row, data) {
     switch (trigger.type) {
       case 'simple':
         return this.checkSimpleConditional(component, trigger.simple, row, data);
       case 'javascript':
-        return this.checkCustomConditional(component, trigger.javascript, row, data, form, 'result', false, instance);
+        return this.checkCustomConditional(component, trigger.javascript, row, data, 'result', false);
       case 'json':
-        return this.checkJsonConditional(component, trigger.json, row, data, form, false);
+        return this.checkJsonConditional(component, trigger.json, row, data, false);
     }
     // If none of the types matched, don't fire the trigger.
     return false;
@@ -806,12 +709,17 @@ var FormioUtils = {
         lang = _ref.lang;
 
     // Get the prefix and suffix from the localized string.
-    var regex = '(.*)?100' + (decimalSeparator === '.' ? '\\.' : decimalSeparator) + '0{' + decimalLimit + '}(.*)?';
+    var regex = '(.*)?100';
+    if (decimalLimit) {
+      regex += (decimalSeparator === '.' ? '\\.' : decimalSeparator) + '0{' + decimalLimit + '}';
+    }
+    regex += '(.*)?';
     var parts = 100 .toLocaleString(lang, {
       style: 'currency',
       currency: currency,
       useGrouping: true,
-      maximumFractionDigits: decimalLimit
+      maximumFractionDigits: decimalLimit,
+      minimumFractionDigits: decimalLimit
     }).replace('.', decimalSeparator).match(new RegExp(regex));
     return {
       prefix: parts[1] || '',
@@ -870,7 +778,7 @@ var lodashOperators = exports.lodashOperators = [
   var undefined;
 
   /** Used as the semantic version number. */
-  var VERSION = '4.17.5';
+  var VERSION = '4.17.10';
 
   /** Used as the size to enable large array optimizations. */
   var LARGE_ARRAY_SIZE = 200;
@@ -1294,6 +1202,14 @@ var lodashOperators = exports.lodashOperators = [
   /** Used to access faster Node.js helpers. */
   var nodeUtil = (function() {
     try {
+      // Use `util.types` for Node.js 10+.
+      var types = freeModule && freeModule.require && freeModule.require('util').types;
+
+      if (types) {
+        return types;
+      }
+
+      // Legacy `process.binding('util')` for Node.js < 10.
       return freeProcess && freeProcess.binding && freeProcess.binding('util');
     } catch (e) {}
   }());
@@ -29748,19 +29664,23 @@ module.exports = function(app) {
             '<label for="action" form-builder-tooltip="This is the action to be performed by this button.">{{\'Action\' | formioTranslate}}</label>' +
             '<select class="form-control" id="action" name="action" ng-options="action.name as action.title | formioTranslate for action in actions" ng-model="component.action"></select>' +
           '</div>' +
+          '<div class="form-group" ng-if="component.action === \'saveState\'">' +
+          '  <label for="state" form-builder-tooltip="Save the submission in a state. Defaults to \'submitted\'. \'draft\' will skip validation.">{{\'Submission State\' | formioTranslate}}</label>' +
+          '  <input type="text" class="form-control" id="state" name="state" ng-model="component.state" placeholder="submitted" />' +
+          '</div>' +
           '<div class="form-group" ng-if="component.action === \'event\'">' +
           '  <label for="event" form-builder-tooltip="The event to fire when the button is clicked.">{{\'Button Event\' | formioTranslate}}</label>' +
           '  <input type="text" class="form-control" id="event" name="event" ng-model="component.event" placeholder="event" />' +
           '</div>' +
-        '<div class="form-group" ng-if="component.action === \'url\'">' +
-        '  <label for="event" form-builder-tooltip="Place an Url where the submission will be sent.">{{\'Button Url\'' +
-        ' | formioTranslate}}</label>' +
-        '  <input type="url" class="form-control" id="event" name="event" ng-model="component.url"' +
-        ' placeholder="URL: https://example.form.io" />' +
-        '</div>' +
-        '<headers-builder ng-if="component.action === \'url\'" form="form" component="component"' +
-        ' data="component.headers" label="Headers" tooltip-text="Headers Properties' +
-        ' and Values for your request."></headers-builder>' +
+          '<div class="form-group" ng-if="component.action === \'url\'">' +
+          '  <label for="url" form-builder-tooltip="Place an Url where the submission will be sent.">{{\'Button Url\'' +
+          ' | formioTranslate}}</label>' +
+          '  <input type="url" class="form-control" id="url" name="event" ng-model="component.url"' +
+          ' placeholder="URL: https://example.form.io" />' +
+          '</div>' +
+          '<headers-builder ng-if="component.action === \'url\'" form="form" component="component"' +
+          ' data="component.headers" label="Headers" tooltip-text="Headers Properties' +
+          ' and Values for your request."></headers-builder>' +
           '<div class="form-group" ng-if="component.action === \'custom\'">' +
           '  <label for="custom" form-builder-tooltip="The custom logic to evaluate when the button is clicked.">{{\'Button Custom Logic\' | formioTranslate}}</label>' +
           '  <formio-script-editor rows="10" id="custom" name="custom" ng-model="component.custom" placeholder="/*** Example Code ***/\ndata[\'mykey\'] = data[\'anotherKey\'];"></formio-script-editor>' +
@@ -30094,6 +30014,7 @@ module.exports = function(app) {
         '        <textarea class="form-control" rows="5" id="json" name="json" json-input ng-model="component.calculateValue" placeholder=\'{ ... }\'></textarea>' +
         '      </div>' +
         '    </uib-accordion>' +
+        '    <form-builder-option property="calculateServer" type="checkbox" label="Calculate on server" tooltip="Perform these calculations on the server as well as the frontend."></form-builder-option>' +
         '  </div>' +
         '</uib-accordion>'
       );
@@ -30662,6 +30583,7 @@ module.exports = function(app) {
                 '<p>Also <strong>moment</strong> library is available, and allows you to manipulate dates in a convenient way.</p>' +
               '</small>' +
             '</div>' +
+        '    <form-builder-option property="calculateServer" type="checkbox" label="Calculate on server" tooltip="Perform these calculations on the server as well as the frontend."></form-builder-option>' +
           '</uib-accordion>' +
           '<uib-accordion>' +
             '<div uib-accordion-group heading="Date" class="panel panel-default">' +
@@ -31531,6 +31453,7 @@ module.exports = function(app) {
         '        <textarea class="form-control" rows="5" id="json" name="json" json-input ng-model="component.calculateValue" placeholder=\'{ ... }\'></textarea>' +
         '      </div>' +
         '    </uib-accordion>' +
+        '    <form-builder-option property="calculateServer" type="checkbox" label="Calculate on server" tooltip="Perform these calculations on the server as well as the frontend."></form-builder-option>' +
         '  </div>' +
         '</uib-accordion>'
       );
@@ -32816,6 +32739,7 @@ module.exports = function(app) {
         '        <textarea class="form-control" rows="5" id="json" name="json" json-input ng-model="component.calculateValue" placeholder=\'{ ... }\'></textarea>' +
         '      </div>' +
         '    </uib-accordion>' +
+        '    <form-builder-option property="calculateServer" type="checkbox" label="Calculate on server" tooltip="Perform these calculations on the server as well as the frontend."></form-builder-option>' +
         '  </div>' +
         '</uib-accordion>'
       );
@@ -33309,6 +33233,10 @@ module.exports = {
       title: 'Submit'
     },
     {
+      name: 'saveState',
+      title: 'Save in state'
+    },
+    {
       name: 'event',
       title: 'Event'
     },
@@ -33319,6 +33247,10 @@ module.exports = {
     {
       name: 'reset',
       title: 'Reset'
+    },
+    {
+      name: 'delete',
+      title: 'Delete'
     },
     {
       name: 'url',
@@ -35487,7 +35419,7 @@ module.exports = ['$timeout','$q', function($timeout, $q) {
 
 },{}],294:[function(_dereq_,module,exports){
 "use strict";
-/*! ng-formio-builder v2.32.0 | https://unpkg.com/ng-formio-builder@2.32.0/LICENSE.txt */
+/*! ng-formio-builder v2.33.0 | https://unpkg.com/ng-formio-builder@2.33.0/LICENSE.txt */
 /*global window: false, console: false, jQuery: false */
 /*jshint browser: true */
 
