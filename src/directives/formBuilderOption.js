@@ -52,6 +52,9 @@ module.exports = ['COMMON_OPTIONS', '$filter', function(COMMON_OPTIONS, $filter)
         inputAttrs.required = "";
         inputAttrs.autofocus = true;
       }
+      if(property === 'description') {
+        inputAttrs.autocomplete = "off";
+      }
       // Add min/max value floor values for validation.
       if (property === 'validate.minLength' || property === 'validate.maxLength') {
         inputAttrs.min = 0;
